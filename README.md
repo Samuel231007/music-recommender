@@ -6,7 +6,7 @@ Recomendador de música que combina **filtrado basado en contenido** (audio feat
 
 ## Demo
 
-> *[Link al deploy — se agrega tras el despliegue en Streamlit Cloud]*
+> https://music-recommender-unb9x5qksxtsbkhttawwmh.streamlit.app/
 
 ---
 
