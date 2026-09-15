@@ -81,3 +81,16 @@ def test_chatbot_explanation(df):
     res = analyze_chat_query("como funciona el algoritmo SVD?", df)
     assert res["type"] == "explanation"
     assert "SVD" in res["message"]
+
+def test_real_user_voting(df, interactions):
+    """Prueba que el guardado de votos reales y combinación de interacciones funciona."""
+    from user_manager import save_user_rating, get_real_user_votes, get_combined_interactions
+    sample_tid = df["track_id"].iloc[0]
+    save_user_rating("TestSamuel", sample_tid, 5.0)
+    votes = get_real_user_votes("TestSamuel")
+    assert sample_tid in votes
+    assert votes[sample_tid] == 5.0
+    
+    combined = get_combined_interactions(interactions)
+    assert len(combined) > len(interactions)
+    assert "real_testsamuel" in combined["user_id"].values

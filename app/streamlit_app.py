@@ -20,6 +20,10 @@ from collab_model import load_model, get_collab_recommendations, train_svd
 from hybrid import get_hybrid_recommendations
 from synthetic_users import generate_interactions, INTERACTIONS_PATH
 from chatbot import analyze_chat_query
+from user_manager import (
+    save_user_rating, get_real_interactions,
+    get_combined_interactions, get_real_user_votes
+)
 
 # ─────────────────────────────────────────────
 # 1. Configuración de la Página
@@ -167,7 +171,11 @@ def load_collab_model(df, interactions):
 df = load_data()
 feature_matrix = load_content_model(df)
 interactions = load_interactions(df)
-collab_model = load_collab_model(df, interactions)
+
+if "active_collab_model" in st.session_state:
+    collab_model = st.session_state["active_collab_model"]
+else:
+    collab_model = load_collab_model(df, interactions)
 
 users = interactions["user_id"].unique().tolist()
 genres_list = sorted(df["track_genre"].dropna().unique().tolist())
@@ -181,6 +189,28 @@ with st.sidebar:
     st.caption("Motor Híbrido de Recomendación Musical")
     st.divider()
 
+    st.subheader("👤 Mi Perfil de Oyente Real")
+    user_name = st.text_input("Tu nombre o apodo:", value="Samuel", key="real_user_name_input")
+    clean_name = user_name.strip() if user_name else "Invitado"
+    real_uid = f"real_{clean_name.lower().replace(' ', '_')}"
+    
+    user_votes = get_real_user_votes(clean_name)
+    n_likes = sum(1 for v in user_votes.values() if v >= 4.0)
+    n_dislikes = sum(1 for v in user_votes.values() if v < 4.0)
+    
+    col_v1, col_v2 = st.columns(2)
+    col_v1.metric("❤️ Likes", n_likes)
+    col_v2.metric("👎 Dislikes", n_dislikes)
+    
+    if len(user_votes) > 0:
+        if st.button("🔄 Entrenar IA con mis votos", use_container_width=True, type="secondary"):
+            with st.spinner("Re-entrenando SVD con tus preferencias reales..."):
+                combined = get_combined_interactions(interactions)
+                st.session_state["active_collab_model"] = train_svd(combined)
+                st.toast("🎉 ¡Modelo SVD re-entrenado exitosamente con tus votos reales!")
+                st.rerun()
+
+    st.divider()
     st.subheader("⚙️ Parámetros de Inferencia")
     n_recs = st.slider("Resultados por consulta", min_value=5, max_value=25, value=10, step=5)
 
@@ -203,6 +233,7 @@ with st.sidebar:
     **Ecosistema:**
     - 🎵 Catálogo: **81,207 canciones**
     - 👥 Usuarios sintéticos: **500 perfiles**
+    - 🌟 Usuarios reales: **Con retroalimentación en vivo**
     - 🏷️ Licencia dataset: **CC0 Dominio Público**
     """)
 
@@ -280,29 +311,51 @@ with tab_recs:
         st.subheader("👤 Perfil de Oyente (Colaborativo)")
         enable_user = st.toggle("Activar personalización por usuario", value=True)
         
+        real_user_label = f"⭐ {clean_name} (Tú - Usuario Real)"
+        user_options = [real_user_label] + users
+
         if enable_user:
-            selected_user_id = st.selectbox("Seleccionar usuario simulado:", users, index=0)
-            user_data = interactions[interactions["user_id"] == selected_user_id]
-            user_arch = user_data["archetype"].iloc[0]
-            user_plays = len(user_data)
+            selected_user_display = st.selectbox("Seleccionar perfil:", user_options, index=0)
             
-            arch_emojis = {
-                "genre_fan": "🎸 Fanático de Género",
-                "artist_follower": "🌟 Seguidor Fiel de Artistas",
-                "eclectic": "🌐 Oyente Ecléctico Universal",
-                "nostalgic": "📻 Amante de Sonidos Clásicos",
-                "energetic": "⚡ Amante de Ritmos Enérgicos"
-            }
-            
-            st.markdown(f"""
-            <div style="background:#1e1e1e; border:1px solid #333; border-radius:12px; padding:1rem; margin-top:0.5rem;">
-                <div style="font-weight:700; color:#1DB954; font-size:1.1rem;">{arch_emojis.get(user_arch, user_arch)}</div>
-                <div style="color:#888; font-size:0.85rem; margin-top:0.3rem;">ID: <code>{selected_user_id}</code></div>
-                <div style="color:#bbb; font-size:0.9rem; margin-top:0.5rem;">
-                    📊 Pistas en historial de escucha: <strong>{user_plays} canciones</strong>
+            if selected_user_display == real_user_label:
+                selected_user_id = real_uid
+                if len(user_votes) == 0:
+                    st.info(f"💡 ¡Hola **{clean_name}**! Aún no has votado canciones. Dale ❤️ a las canciones abajo para que la IA aprenda qué te gusta.")
+                else:
+                    st.markdown(f"""
+                    <div style="background:#0d3b1e; border:1px solid #1DB954; border-radius:12px; padding:1rem; margin-top:0.5rem;">
+                        <div style="font-weight:700; color:#1DB954; font-size:1.1rem;">🌟 Perfil Real Activo: {clean_name}</div>
+                        <div style="color:#ffffff; font-size:0.9rem; margin-top:0.3rem;">
+                            ❤️ <strong>{n_likes} canciones favoritas</strong> · 👎 <strong>{n_dislikes} descartadas</strong>
+                        </div>
+                        <div style="color:#a0a0a0; font-size:0.8rem; margin-top:0.4rem;">
+                            La IA usará tus votos para encontrar oyentes afines.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                selected_user_id = selected_user_display
+                user_data = interactions[interactions["user_id"] == selected_user_id]
+                user_arch = user_data["archetype"].iloc[0]
+                user_plays = len(user_data)
+                
+                arch_emojis = {
+                    "genre_fan": "🎸 Fanático de Género",
+                    "artist_follower": "🌟 Seguidor Fiel de Artistas",
+                    "eclectic": "🌐 Oyente Ecléctico Universal",
+                    "nostalgic": "📻 Amante de Sonidos Clásicos",
+                    "energetic": "⚡ Amante de Ritmos Enérgicos"
+                }
+                
+                st.markdown(f"""
+                <div style="background:#1e1e1e; border:1px solid #333; border-radius:12px; padding:1rem; margin-top:0.5rem;">
+                    <div style="font-weight:700; color:#1DB954; font-size:1.1rem;">{arch_emojis.get(user_arch, user_arch)}</div>
+                    <div style="color:#888; font-size:0.85rem; margin-top:0.3rem;">ID: <code>{selected_user_id}</code></div>
+                    <div style="color:#bbb; font-size:0.9rem; margin-top:0.5rem;">
+                        📊 Pistas en historial de escucha: <strong>{user_plays} canciones</strong>
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
         else:
             selected_user_id = None
             st.info("💡 Modo 'Sin Usuario': La recomendación operará con base en el vector de similitud acústica y popularidad global.")
@@ -324,6 +377,18 @@ with tab_recs:
 
             query_url = urllib.parse.quote(f"{selected_song['track_name']} {selected_song['artists']}")
             st.link_button("▶️ Abrir en Spotify Web", f"https://open.spotify.com/search/{query_url}", use_container_width=True)
+            
+            # Votación interactiva de la pista semilla
+            seed_vote = user_votes.get(selected_song["track_id"])
+            q_vcol1, q_vcol2 = st.columns(2)
+            if q_vcol1.button("❤️ Me gusta" if seed_vote != 5.0 else "💚 ¡En tus favoritas!", key="seed_like", use_container_width=True):
+                save_user_rating(clean_name, selected_song["track_id"], 5.0)
+                st.toast(f"❤️ ¡Guardaste '{selected_song['track_name'].title()}' en tus favoritas!")
+                st.rerun()
+            if q_vcol2.button("👎 No me gusta" if seed_vote != 1.0 else "🖤 Marcada descartada", key="seed_dislike", use_container_width=True):
+                save_user_rating(clean_name, selected_song["track_id"], 1.0)
+                st.toast("👎 Registrado desinterés en esta pista")
+                st.rerun()
 
         with col_dna2:
             radar_features = ["danceability", "energy", "speechiness", "acousticness", "liveness", "valence"]
@@ -390,19 +455,33 @@ with tab_recs:
                 sp_url = urllib.parse.quote(f"{r['track_name']} {r['artists']}")
                 
                 with st.container():
-                    c_rank, c_info, c_bar, c_link = st.columns([0.4, 3, 2, 1], gap="medium")
+                    c_rank, c_info, c_bar, c_vote, c_link = st.columns([0.4, 2.7, 1.8, 1.1, 1], gap="small")
                     
                     with c_rank:
                         st.markdown(f"<h2 style='color:#1DB954; margin:0;'>#{idx+1}</h2>", unsafe_allow_html=True)
                         
                     with c_info:
-                        st.markdown(f"**{r['track_name'].title()}** {badge_html}", unsafe_allow_html=True)
+                        cur_vote = user_votes.get(r["track_id"])
+                        vote_indicator = " ❤️" if cur_vote == 5.0 else (" 👎" if cur_vote == 1.0 else "")
+                        st.markdown(f"**{r['track_name'].title()}** {badge_html}{vote_indicator}", unsafe_allow_html=True)
                         st.caption(f"Artista: **{r['artists'].title()}** · Género: `{r['track_genre'].title()}` · Popularidad: ⭐ {r['popularity']}/100")
                         
                     with c_bar:
                         st.markdown(f"<div style='font-size:0.8rem; color:#888;'>Afinidad global: <strong>{match_pct}%</strong></div>", unsafe_allow_html=True)
                         st.progress(min(max(float(r["hybrid_score"]), 0.0), 1.0))
                         st.caption(f"Audio DNA: {int(r['content_score_norm']*100)}% | SVD Collab: {int(r['collab_score_norm']*100)}%")
+
+                    with c_vote:
+                        cur_vote = user_votes.get(r["track_id"])
+                        v_col1, v_col2 = st.columns(2)
+                        if v_col1.button("❤️" if cur_vote != 5.0 else "💚", key=f"lk_{idx}_{r['track_id']}", help="Me gusta (Rating 5.0)"):
+                            save_user_rating(clean_name, r["track_id"], 5.0)
+                            st.toast(f"❤️ ¡Guardaste '{r['track_name'].title()}' en tus favoritas!")
+                            st.rerun()
+                        if v_col2.button("👎" if cur_vote != 1.0 else "🖤", key=f"dk_{idx}_{r['track_id']}", help="No me gusta (Rating 1.0)"):
+                            save_user_rating(clean_name, r["track_id"], 1.0)
+                            st.toast("👎 Registrado desinterés")
+                            st.rerun()
                         
                     with c_link:
                         st.link_button("Oír en Spotify", f"https://open.spotify.com/search/{sp_url}", use_container_width=True)
@@ -662,6 +741,30 @@ with tab_users:
         use_container_width=True,
         hide_index=True
     )
+
+    st.divider()
+    st.markdown("#### 🌟 Panel de Usuarios Reales Registrados")
+    st.caption("Personas reales que han visitado la aplicación e interactuado calificando canciones en vivo:")
+    real_interactions_df = get_real_interactions()
+    if real_interactions_df.empty:
+        st.info("Aún no hay votos de usuarios reales registrados en esta sesión. ¡Sé el primero votando con ❤️ o 👎 en la pestaña de recomendación!")
+    else:
+        st.success(f"Hay **{real_interactions_df['user_id'].nunique()} usuario(s) real(es)** y **{len(real_interactions_df)} voto(s) activo(s)**.")
+        real_summary = real_interactions_df.merge(df[["track_id", "track_name", "artists", "track_genre"]], on="track_id", how="left")
+        real_summary["track_name"] = real_summary["track_name"].fillna("Desconocida").str.title()
+        real_summary["artists"] = real_summary["artists"].fillna("Varios").str.title()
+        st.dataframe(
+            real_summary[["user_id", "track_name", "artists", "track_genre", "rating", "timestamp"]].rename(columns={
+                "user_id": "ID Usuario",
+                "track_name": "Canción",
+                "artists": "Artista",
+                "track_genre": "Género",
+                "rating": "Rating",
+                "timestamp": "Fecha / Hora"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
 
 # ═════════════════════════════════════════════
 # TAB 4: ARQUITECTURA & BENCHMARKS

@@ -89,6 +89,14 @@ Para entrenar la matriz colaborativa sin vulnerar la privacidad de usuarios real
 
 ---
 
+### 5. 🌟 Perfiles de Usuarios Reales y Aprendizaje Continuo (Feedback Activo)
+- **Registro sin fricción:** Cualquier visitante ingresa su nombre o alias para crear su perfil de oyente real al instante.
+- **Botones de Voto Interactivo:** Califica con ❤️ (*Me gusta - Rating 5.0*) o 👎 (*Descartada - Rating 1.0*) tanto la pista semilla como cualquiera de las recomendaciones generadas.
+- **Re-entrenamiento SVD on-demand:** Un botón dedicado re-entrena la factorización matricial SVD en ~3 segundos, combinando los datos sintéticos con las preferencias reales de los visitantes.
+- **Auditoría Transparente:** Panel dedicado en la pestaña de Arquetipos donde se visualiza el registro histórico de usuarios reales y sus canciones favoritas.
+
+---
+
 ## 📊 Benchmarks y Evaluación del Modelo
 
 | Métrica | Valor | Interpretación |
