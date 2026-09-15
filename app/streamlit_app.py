@@ -265,6 +265,69 @@ tab_recs, tab_chat, tab_stats, tab_users, tab_about = st.tabs([
 # TAB 1: RECOMENDADOR HÍBRIDO
 # ═════════════════════════════════════════════
 with tab_recs:
+    # ── Onboarding / Calibrador de Gustos (Cold-Start) ──
+    onboarding_expanded = (len(user_votes) < 3)
+    with st.expander("🚀 Calibra tu Algoritmo — Vota canciones populares para personalizar tu experiencia", expanded=onboarding_expanded):
+        st.markdown(f"¡Hola **{clean_name}**! Vota al menos **3 canciones** con ❤️ (*Me gusta*) o 👎 (*Descartar*) para que el modelo colaborativo SVD aprenda tus gustos musicales desde el inicio:")
+        
+        if "onboarding_seed" not in st.session_state:
+            st.session_state["onboarding_seed"] = 42
+            
+        # Muestra de 6 canciones de alto impacto y variadas
+        popular_pool = df.sort_values("popularity", ascending=False).head(50)
+        onboarding_candidates = popular_pool.sample(6, random_state=st.session_state["onboarding_seed"])
+            
+        cols = st.columns(3)
+        for i, (_, row_ob) in enumerate(onboarding_candidates.iterrows()):
+            col_idx = i % 3
+            with cols[col_idx]:
+                ob_vote = user_votes.get(row_ob["track_id"])
+                border_color = "#1DB954" if ob_vote == 5.0 else ("#e91e63" if ob_vote == 1.0 else "#2e2e2e")
+                vote_status = "❤️ Favorita" if ob_vote == 5.0 else ("👎 Descartada" if ob_vote == 1.0 else "")
+                
+                st.markdown(f"""
+                <div style="background:#181818; border:1px solid {border_color}; border-radius:12px; padding:0.9rem; margin-bottom:0.7rem;">
+                    <div style="font-weight:700; color:#fff; font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{row_ob['track_name'].title()}</div>
+                    <div style="color:#b3b3b3; font-size:0.8rem; margin-top:0.2rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{row_ob['artists'].title()}</div>
+                    <div style="margin-top:0.4rem; display:flex; justify-content:space-between; align-items:center;">
+                        <span class="badge badge-genre">{row_ob['track_genre'].title()}</span>
+                        <span style="font-size:0.75rem; color:#1DB954; font-weight:600;">{vote_status}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                b_col1, b_col2, b_col3 = st.columns([1, 1, 1.2])
+                if b_col1.button("❤️" if ob_vote != 5.0 else "💚", key=f"ob_lk_{row_ob['track_id']}", help="Me gusta"):
+                    save_user_rating(clean_name, row_ob["track_id"], 5.0)
+                    st.toast(f"❤️ ¡Votaste '{row_ob['track_name'].title()}'!")
+                    st.rerun()
+                if b_col2.button("👎" if ob_vote != 1.0 else "🖤", key=f"ob_dk_{row_ob['track_id']}", help="No me gusta"):
+                    save_user_rating(clean_name, row_ob["track_id"], 1.0)
+                    st.toast(f"👎 Descartaste '{row_ob['track_name'].title()}'")
+                    st.rerun()
+                ob_url = urllib.parse.quote(f"{row_ob['track_name']} {row_ob['artists']}")
+                b_col3.link_button("▶️ Spotify", f"https://open.spotify.com/search/{ob_url}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        voted_count = len(user_votes)
+        calib_pct = min(voted_count / 3.0, 1.0)
+        st.markdown(f"**Progreso de Calibración:** `{voted_count}/3 canciones votadas`")
+        st.progress(calib_pct)
+        
+        col_act1, col_act2 = st.columns([1.5, 1])
+        if voted_count >= 1:
+            if col_act1.button("⚡ Sincronizar mis votos y calibrar recomendador ahora", type="primary", use_container_width=True):
+                with st.spinner("Calibrando modelo colaborativo SVD con tus preferencias reales..."):
+                    combined = get_combined_interactions(interactions)
+                    st.session_state["active_collab_model"] = train_svd(combined)
+                    st.toast("🎉 ¡Algoritmo calibrado con éxito! Ahora tus recomendaciones son 100% personalizadas.")
+                    st.rerun()
+        if col_act2.button("🎲 Mostrar otras canciones para votar", use_container_width=True):
+            st.session_state["onboarding_seed"] = int(np.random.randint(1, 10000))
+            st.rerun()
+
+    st.divider()
+
     c_left, c_right = st.columns([1.6, 1], gap="large")
 
     with c_left:
