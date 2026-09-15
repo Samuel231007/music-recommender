@@ -1,4 +1,4 @@
-﻿"""
+"""
 test_models.py
 Tests básicos para los módulos del recomendador híbrido.
 """
@@ -65,3 +65,19 @@ def test_synthetic_users_archetypes(interactions):
 def test_synthetic_users_ratings_range(interactions):
     """Los ratings deben estar en el rango [0.5, 5.0]."""
     assert interactions["rating"].between(0.5, 5.0).all()
+
+def test_chatbot_mood_analysis(df):
+    """El chatbot debe responder con pistas acordes al estado de animo solicitado."""
+    from chatbot import analyze_chat_query
+    res = analyze_chat_query("quiero musica para entrenar en el gym", df, n_results=5)
+    assert res["type"] == "tracks"
+    assert len(res["tracks"]) == 5
+    # Verificar que el promedio de energía es alto para entrenar
+    assert res["tracks"]["energy"].mean() >= 0.65
+
+def test_chatbot_explanation(df):
+    """El chatbot debe reconocer preguntas teoricas de SVD y responder explicaciones."""
+    from chatbot import analyze_chat_query
+    res = analyze_chat_query("como funciona el algoritmo SVD?", df)
+    assert res["type"] == "explanation"
+    assert "SVD" in res["message"]

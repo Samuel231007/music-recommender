@@ -1,4 +1,4 @@
-﻿"""
+"""
 streamlit_app.py
 Interfaz interactiva y visual del Sistema de Recomendación de Música Híbrido.
 """
@@ -19,6 +19,7 @@ from content_model import build_feature_matrix, get_content_recommendations
 from collab_model import load_model, get_collab_recommendations, train_svd
 from hybrid import get_hybrid_recommendations
 from synthetic_users import generate_interactions, INTERACTIONS_PATH
+from chatbot import analyze_chat_query
 
 # ─────────────────────────────────────────────
 # 1. Configuración de la Página
@@ -221,8 +222,9 @@ st.markdown("""
 # ─────────────────────────────────────────────
 # 6. Pestañas de Navegación
 # ─────────────────────────────────────────────
-tab_recs, tab_stats, tab_users, tab_about = st.tabs([
+tab_recs, tab_chat, tab_stats, tab_users, tab_about = st.tabs([
     "🎧 Recomendador Híbrido",
+    "💬 BeatBot AI (DJ Virtual)",
     "📈 Estadísticas del Catálogo",
     "👥 Arquetipos de Oyentes",
     "🧠 Arquitectura & Benchmarks"
@@ -408,7 +410,78 @@ with tab_recs:
                     st.divider()
 
 # ═════════════════════════════════════════════
-# TAB 2: ESTADÍSTICAS DEL CATÁLOGO
+# TAB 2: BEATBOT AI (DJ VIRTUAL CON IA)
+# ═════════════════════════════════════════════
+with tab_chat:
+    st.subheader("💬 BeatBot AI — Tu DJ & Asistente Musical Inteligente")
+    st.caption("Conversa en lenguaje natural para recibir recomendaciones por estado de ánimo, momentos del día o resolver dudas técnicas del sistema.")
+
+    # Chips de sugerencias interactivas
+    st.markdown("**🎯 Sugerencias rápidas para comenzar:**")
+    q_c1, q_c2, q_c3, q_c4 = st.columns(4)
+    quick_prompt = None
+    if q_c1.button("🔥 Música para entrenar gym", use_container_width=True):
+        quick_prompt = "Quiero música para entrenar con alta energía y ritmo rápido"
+    if q_c2.button("📚 Acústico para estudiar", use_container_width=True):
+        quick_prompt = "Canciones acústicas y relajantes para estudiar o concentrarme"
+    if q_c3.button("🎉 Éxitos para bailar fiesta", use_container_width=True):
+        quick_prompt = "Música para bailar y prender una fiesta con amigos"
+    if q_c4.button("🔬 ¿Cómo funciona el SVD?", use_container_width=True):
+        quick_prompt = "¿Cómo funciona la descomposición SVD en el filtrado colaborativo?"
+
+    # Inicializar historial de chat
+    if "chat_messages" not in st.session_state:
+        st.session_state["chat_messages"] = [
+            {
+                "role": "assistant",
+                "content": "¡Hola! Soy **BeatBot**, tu DJ y asistente musical con Inteligencia Artificial. 🎧✨\n\nPuedes pedirme listas por estado de ánimo (*feliz, relax, entrenar, melancólico*), consultar pistas similares a un artista o preguntarme sobre la matemática de este recomendador híbrido.\n\n¿Qué vibra tienes hoy?",
+                "tracks": None
+            }
+        ]
+
+    # Renderizar historial de mensajes
+    for msg in st.session_state["chat_messages"]:
+        with st.chat_message(msg["role"], avatar="🎧" if msg["role"] == "assistant" else "👤"):
+            st.markdown(msg["content"])
+            if msg.get("tracks") is not None and not msg["tracks"].empty:
+                for _, t in msg["tracks"].reset_index().iterrows():
+                    sp_url = urllib.parse.quote(f"{t['track_name']} {t['artists']}")
+                    st.markdown(
+                        f"- 🎵 **{t['track_name'].title()}** — *{t['artists'].title()}* "
+                        f"(`{t['track_genre'].title()}` · Popularidad: ⭐ {t['popularity']}/100) — "
+                        f"[Abrir en Spotify](https://open.spotify.com/search/{sp_url})"
+                    )
+
+    # Input del usuario
+    user_input = st.chat_input("Escribe tu solicitud o pregunta a BeatBot AI...")
+    active_prompt = quick_prompt or user_input
+
+    if active_prompt:
+        st.session_state["chat_messages"].append({"role": "user", "content": active_prompt, "tracks": None})
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(active_prompt)
+
+        with st.chat_message("assistant", avatar="🎧"):
+            with st.spinner("BeatBot está mezclando pistas..."):
+                analysis = analyze_chat_query(active_prompt, df, n_results=5)
+                st.markdown(analysis["message"])
+                tracks = analysis.get("tracks")
+                if tracks is not None and not tracks.empty:
+                    for _, t in tracks.reset_index().iterrows():
+                        sp_url = urllib.parse.quote(f"{t['track_name']} {t['artists']}")
+                        st.markdown(
+                            f"- 🎵 **{t['track_name'].title()}** — *{t['artists'].title()}* "
+                            f"(`{t['track_genre'].title()}` · Popularidad: ⭐ {t['popularity']}/100) — "
+                            f"[Abrir en Spotify](https://open.spotify.com/search/{sp_url})"
+                        )
+                st.session_state["chat_messages"].append({
+                    "role": "assistant",
+                    "content": analysis["message"],
+                    "tracks": tracks
+                })
+
+# ═════════════════════════════════════════════
+# TAB 3: ESTADÍSTICAS DEL CATÁLOGO
 # ═════════════════════════════════════════════
 with tab_stats:
     st.subheader("📊 Análisis Descriptivo del Catálogo Musical")
