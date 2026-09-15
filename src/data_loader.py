@@ -1,4 +1,4 @@
-﻿"""
+"""
 data_loader.py
 Carga y limpieza del dataset de Spotify.
 """
@@ -49,16 +49,21 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.reset_index(drop=True)
     return df
 
+PROCESSED_GZ_PATH = Path(__file__).parent.parent / "data" / "processed" / "tracks_clean.csv.gz"
+
 def load_clean(force_reprocess: bool = False) -> pd.DataFrame:
     """Carga el dataset limpio (desde cache si existe)."""
+    if PROCESSED_GZ_PATH.exists() and not force_reprocess:
+        return pd.read_csv(PROCESSED_GZ_PATH)
     if PROCESSED_PATH.exists() and not force_reprocess:
         return pd.read_csv(PROCESSED_PATH)
-    df = load_raw()
-    df = clean(df)
-    PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(PROCESSED_PATH, index=False)
-    print(f"Dataset limpio guardado en {PROCESSED_PATH}")
-    return df
+    if RAW_PATH.exists():
+        df = load_raw()
+        df = clean(df)
+        PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(PROCESSED_GZ_PATH, index=False, compression="gzip")
+        return df
+    raise FileNotFoundError(f"No se encontró el dataset en {PROCESSED_GZ_PATH} ni en {RAW_PATH}")
 
 if __name__ == "__main__":
     df = load_clean(force_reprocess=True)

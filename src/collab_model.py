@@ -1,4 +1,4 @@
-﻿"""
+"""
 collab_model.py
 Modelo de filtrado colaborativo por factorización de matrices (SVD).
 Usa scikit-surprise para entrenamiento y predicción.
@@ -47,16 +47,34 @@ def get_collab_recommendations(
     n: int = 10
 ) -> pd.DataFrame:
     """
-    Para un user_id dado, predice el rating para todas las canciones
-    que aún no ha escuchado y devuelve las top N.
+    Para un user_id dado, predice el rating de manera vectorizada
+    (instantánea) y devuelve las top N canciones recomendadas.
     """
     listened = set(interactions[interactions["user_id"] == user_id]["track_id"].values)
-    all_tracks = df_tracks["track_id"].values
-    unlistened = [t for t in all_tracks if t not in listened]
 
-    predictions = [(t, model.predict(user_id, t).est) for t in unlistened]
-    predictions.sort(key=lambda x: x[1], reverse=True)
-    top = predictions[:n]
+    try:
+        inner_uid = model.trainset.to_inner_uid(user_id)
+        # Vectorized SVD: mu + bu + bi + (qi . pu)
+        inner_scores = (
+            model.trainset.global_mean
+            + model.bu[inner_uid]
+            + model.bi
+            + np.dot(model.qi, model.pu[inner_uid])
+        )
+        
+        # Mapear a raw track_ids
+        raw_items = [model.trainset.to_raw_iid(i) for i in range(len(inner_scores))]
+        
+        # Filtrar ya escuchadas
+        candidates = [(tid, score) for tid, score in zip(raw_items, inner_scores) if tid not in listened]
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        top = candidates[:n]
+        
+    except (ValueError, KeyError):
+        # Cold-start / usuario nuevo: usar popularidad
+        unheard = df_tracks[~df_tracks["track_id"].isin(listened)]
+        top_popular = unheard.sort_values("popularity", ascending=False).head(n)
+        top = [(r["track_id"], r["popularity"] / 20.0) for _, r in top_popular.iterrows()]
 
     top_ids = [p[0] for p in top]
     top_scores = {p[0]: p[1] for p in top}
