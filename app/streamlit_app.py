@@ -22,7 +22,8 @@ from synthetic_users import generate_interactions, INTERACTIONS_PATH
 from chatbot import analyze_chat_query
 from user_manager import (
     save_user_rating, get_real_interactions,
-    get_combined_interactions, get_real_user_votes
+    get_combined_interactions, get_real_user_votes,
+    normalize_username, is_username_taken
 )
 
 # ─────────────────────────────────────────────
@@ -40,14 +41,12 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Tipografía y fondo */
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     
     html, body, [class*="css"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Header principal */
     .hero-container {
         background: linear-gradient(135deg, #0d3b1e 0%, #121212 60%, #1e1e1e 100%);
         border: 1px solid rgba(29, 185, 84, 0.25);
@@ -74,7 +73,6 @@ st.markdown("""
         line-height: 1.5;
     }
     
-    /* Tarjetas de canciones recomendadas */
     .rec-card {
         background: linear-gradient(145deg, #181818 0%, #202020 100%);
         border: 1px solid #2e2e2e;
@@ -89,7 +87,6 @@ st.markdown("""
         box-shadow: 0 8px 24px rgba(29, 185, 84, 0.18);
     }
     
-    /* Insignias (Badges) */
     .badge {
         display: inline-block;
         padding: 0.22rem 0.65rem;
@@ -120,7 +117,6 @@ st.markdown("""
         border: 1px solid #3e3e3e;
     }
     
-    /* Métricas KPI */
     .kpi-card {
         background: #181818;
         border: 1px solid #282828;
@@ -192,8 +188,14 @@ with st.sidebar:
     st.subheader("👤 Mi Perfil de Oyente Real")
     user_name = st.text_input("Tu nombre o apodo:", value="Samuel", key="real_user_name_input")
     clean_name = user_name.strip() if user_name else "Invitado"
-    real_uid = f"real_{clean_name.lower().replace(' ', '_')}"
+    norm_id = normalize_username(clean_name)
+    real_uid = f"real_{norm_id}"
     
+    if is_username_taken(clean_name):
+        st.info(f"ℹ️ Conectado a perfil existente: **`{real_uid}`**")
+    else:
+        st.caption(f"🆔 ID único asignado: **`{real_uid}`**")
+
     user_votes = get_real_user_votes(clean_name)
     n_likes = sum(1 for v in user_votes.values() if v >= 4.0)
     n_dislikes = sum(1 for v in user_votes.values() if v < 4.0)
@@ -265,15 +267,15 @@ tab_recs, tab_chat, tab_stats, tab_users, tab_about = st.tabs([
 # TAB 1: RECOMENDADOR HÍBRIDO
 # ═════════════════════════════════════════════
 with tab_recs:
-    # ── Onboarding / Calibrador de Gustos (Cold-Start) ──
-    onboarding_expanded = (len(user_votes) < 3)
+    current_user_votes = get_real_user_votes(clean_name)
+    onboarding_expanded = (len(current_user_votes) < 3)
+    
     with st.expander("🚀 Calibra tu Algoritmo — Vota canciones populares para personalizar tu experiencia", expanded=onboarding_expanded):
         st.markdown(f"¡Hola **{clean_name}**! Vota al menos **3 canciones** con ❤️ (*Me gusta*) o 👎 (*Descartar*) para que el modelo colaborativo SVD aprenda tus gustos musicales desde el inicio:")
         
         if "onboarding_seed" not in st.session_state:
             st.session_state["onboarding_seed"] = 42
             
-        # Muestra de 6 canciones de alto impacto y variadas
         popular_pool = df.sort_values("popularity", ascending=False).head(50)
         onboarding_candidates = popular_pool.sample(6, random_state=st.session_state["onboarding_seed"])
             
@@ -281,7 +283,7 @@ with tab_recs:
         for i, (_, row_ob) in enumerate(onboarding_candidates.iterrows()):
             col_idx = i % 3
             with cols[col_idx]:
-                ob_vote = user_votes.get(row_ob["track_id"])
+                ob_vote = current_user_votes.get(row_ob["track_id"])
                 border_color = "#1DB954" if ob_vote == 5.0 else ("#e91e63" if ob_vote == 1.0 else "#2e2e2e")
                 vote_status = "❤️ Favorita" if ob_vote == 5.0 else ("👎 Descartada" if ob_vote == 1.0 else "")
                 
@@ -309,8 +311,11 @@ with tab_recs:
                 b_col3.link_button("▶️ Spotify", f"https://open.spotify.com/search/{ob_url}")
         
         st.markdown("<br>", unsafe_allow_html=True)
-        voted_count = len(user_votes)
+        
+        updated_votes = get_real_user_votes(clean_name)
+        voted_count = len(updated_votes)
         calib_pct = min(voted_count / 3.0, 1.0)
+        
         st.markdown(f"**Progreso de Calibración:** `{voted_count}/3 canciones votadas`")
         st.progress(calib_pct)
         
@@ -333,7 +338,6 @@ with tab_recs:
     with c_left:
         st.subheader("🔍 Selección de Canción Semilla")
         
-        # Filtros para búsqueda
         genre_filter = st.selectbox(
             "Filtrar por género (opcional):",
             ["Todos los géneros"] + genres_list
@@ -382,7 +386,7 @@ with tab_recs:
             
             if selected_user_display == real_user_label:
                 selected_user_id = real_uid
-                if len(user_votes) == 0:
+                if len(updated_votes) == 0:
                     st.info(f"💡 ¡Hola **{clean_name}**! Aún no has votado canciones. Dale ❤️ a las canciones abajo para que la IA aprenda qué te gusta.")
                 else:
                     st.markdown(f"""
@@ -423,7 +427,7 @@ with tab_recs:
             selected_user_id = None
             st.info("💡 Modo 'Sin Usuario': La recomendación operará con base en el vector de similitud acústica y popularidad global.")
 
-    # Radar Chart de la canción seleccionada
+    # Radar Chart
     if selected_track_id:
         st.divider()
         col_dna1, col_dna2 = st.columns([1, 1.3], gap="large")
@@ -441,8 +445,7 @@ with tab_recs:
             query_url = urllib.parse.quote(f"{selected_song['track_name']} {selected_song['artists']}")
             st.link_button("▶️ Abrir en Spotify Web", f"https://open.spotify.com/search/{query_url}", use_container_width=True)
             
-            # Votación interactiva de la pista semilla
-            seed_vote = user_votes.get(selected_song["track_id"])
+            seed_vote = updated_votes.get(selected_song["track_id"])
             q_vcol1, q_vcol2 = st.columns(2)
             if q_vcol1.button("❤️ Me gusta" if seed_vote != 5.0 else "💚 ¡En tus favoritas!", key="seed_like", use_container_width=True):
                 save_user_rating(clean_name, selected_song["track_id"], 5.0)
@@ -524,7 +527,7 @@ with tab_recs:
                         st.markdown(f"<h2 style='color:#1DB954; margin:0;'>#{idx+1}</h2>", unsafe_allow_html=True)
                         
                     with c_info:
-                        cur_vote = user_votes.get(r["track_id"])
+                        cur_vote = updated_votes.get(r["track_id"])
                         vote_indicator = " ❤️" if cur_vote == 5.0 else (" 👎" if cur_vote == 1.0 else "")
                         st.markdown(f"**{r['track_name'].title()}** {badge_html}{vote_indicator}", unsafe_allow_html=True)
                         st.caption(f"Artista: **{r['artists'].title()}** · Género: `{r['track_genre'].title()}` · Popularidad: ⭐ {r['popularity']}/100")
@@ -535,7 +538,7 @@ with tab_recs:
                         st.caption(f"Audio DNA: {int(r['content_score_norm']*100)}% | SVD Collab: {int(r['collab_score_norm']*100)}%")
 
                     with c_vote:
-                        cur_vote = user_votes.get(r["track_id"])
+                        cur_vote = updated_votes.get(r["track_id"])
                         v_col1, v_col2 = st.columns(2)
                         if v_col1.button("❤️" if cur_vote != 5.0 else "💚", key=f"lk_{idx}_{r['track_id']}", help="Me gusta (Rating 5.0)"):
                             save_user_rating(clean_name, r["track_id"], 5.0)
@@ -558,7 +561,6 @@ with tab_chat:
     st.subheader("💬 BeatBot AI — Tu DJ & Asistente Musical Inteligente")
     st.caption("Conversa en lenguaje natural para recibir recomendaciones por estado de ánimo, momentos del día o resolver dudas técnicas del sistema.")
 
-    # Chips de sugerencias interactivas
     st.markdown("**🎯 Sugerencias rápidas para comenzar:**")
     q_c1, q_c2, q_c3, q_c4 = st.columns(4)
     quick_prompt = None
@@ -571,7 +573,6 @@ with tab_chat:
     if q_c4.button("🔬 ¿Cómo funciona el SVD?", use_container_width=True):
         quick_prompt = "¿Cómo funciona la descomposición SVD en el filtrado colaborativo?"
 
-    # Inicializar historial de chat
     if "chat_messages" not in st.session_state:
         st.session_state["chat_messages"] = [
             {
@@ -581,7 +582,6 @@ with tab_chat:
             }
         ]
 
-    # Renderizar historial de mensajes
     for msg in st.session_state["chat_messages"]:
         with st.chat_message(msg["role"], avatar="🎧" if msg["role"] == "assistant" else "👤"):
             st.markdown(msg["content"])
@@ -594,7 +594,6 @@ with tab_chat:
                         f"[Abrir en Spotify](https://open.spotify.com/search/{sp_url})"
                     )
 
-    # Input del usuario
     user_input = st.chat_input("Escribe tu solicitud o pregunta a BeatBot AI...")
     active_prompt = quick_prompt or user_input
 
@@ -629,7 +628,6 @@ with tab_stats:
     st.subheader("📊 Análisis Descriptivo del Catálogo Musical")
     st.caption("Exploración interactiva del universo sonoro de 81,207 canciones procesadas.")
 
-    # KPIs superiores
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
         st.markdown("""<div class="kpi-card"><div class="kpi-num">81,207</div><div class="kpi-label">Pistas Únicas</div></div>""", unsafe_allow_html=True)
@@ -644,7 +642,6 @@ with tab_stats:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Gráficas Sección 1
     col_g1, col_g2 = st.columns(2, gap="large")
     
     with col_g1:
@@ -690,7 +687,6 @@ with tab_stats:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Gráficas Sección 2: Distribución por características
     col_feat1, col_feat2 = st.columns([1, 1.5], gap="large")
     with col_feat1:
         st.markdown("#### 🎚️ Explorar Distribución de Feature")
@@ -732,7 +728,7 @@ with tab_stats:
         )
 
 # ═════════════════════════════════════════════
-# TAB 3: ARQUETIPOS DE OYENTES
+# TAB 4: ARQUETIPOS DE OYENTES
 # ═════════════════════════════════════════════
 with tab_users:
     st.subheader("👥 Modelado de Usuarios Sintéticos")
@@ -785,7 +781,6 @@ with tab_users:
     inspect_user = st.selectbox("Selecciona usuario a auditar:", users, index=0)
     user_records = interactions[interactions["user_id"] == inspect_user]
     
-    # Merge con df para ver títulos
     user_full = user_records.merge(df, on="track_id", how="left")
     
     col_u_kpi1, col_u_kpi2, col_u_kpi3 = st.columns(3)
@@ -830,7 +825,7 @@ with tab_users:
         )
 
 # ═════════════════════════════════════════════
-# TAB 4: ARQUITECTURA & BENCHMARKS
+# TAB 5: ARQUITECTURA & BENCHMARKS
 # ═════════════════════════════════════════════
 with tab_about:
     st.subheader("🧠 Arquitectura Matemática y Evaluación")
