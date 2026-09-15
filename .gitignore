@@ -1,0 +1,26 @@
+﻿# Dataset raw (no versionar en git)
+data/raw/
+*.zip
+*.csv.zip
+
+# Entorno virtual
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Modelos entrenados grandes
+data/processed/*.pkl
+data/processed/similarity_matrix.npy
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Kaggle credentials
+.kaggle/
+
+# OS
+.DS_Store
+Thumbs.db
