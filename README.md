@@ -179,3 +179,6 @@ music-recommender/
 
 - **Código:** Licencia MIT.
 - **Dataset:** [Spotify Tracks Genre Dataset](https://www.kaggle.com/datasets/thedevastator/spotify-tracks-genre-dataset) por *thedevastator* en Kaggle, publicado bajo licencia **Creative Commons CC0: Public Domain Dedication**.
+
+-    sqlalchemy>=2.0
+   psycopg2-binary
