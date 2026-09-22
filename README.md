@@ -57,6 +57,76 @@ flowchart TD
 
 ---
 
+## 🗄️ Modelo Entidad-Relación (Supabase PostgreSQL)
+
+El sistema implementa una arquitectura relacional normalizada en **Supabase** diseñada para soportar tanto **usuarios reales concurrentes** como telemetría sintética de entrenamiento:
+
+```mermaid
+erDiagram
+    USERS ||--o{ USER_INTERACTIONS : "realiza"
+    TRACKS ||--o{ USER_INTERACTIONS : "recibe"
+    USERS ||--o{ RECOMMENDATION_HISTORY : "obtiene"
+    TRACKS ||--o{ RECOMMENDATION_HISTORY : "sugerida_en"
+    USERS ||--o{ DJ_CHAT_LOGS : "consulta"
+
+    USERS {
+        string id PK "real_samuel / user_0001"
+        string username UK "samuel"
+        string display_name "Samuel Pérez"
+        string email "opcional"
+        boolean is_synthetic "false / true"
+        string archetype "real_user / genre_fan"
+        timestamptz created_at
+        timestamptz last_active_at
+    }
+
+    TRACKS {
+        string track_id PK "Spotify Track ID"
+        string track_name "Título de la canción"
+        string artists "Artista(s)"
+        string album_name "Álbum"
+        string track_genre "Género musical"
+        int popularity "0 a 100"
+        float danceability "0.0 a 1.0"
+        float energy "0.0 a 1.0"
+        float valence "0.0 a 1.0"
+        float tempo "BPM"
+    }
+
+    USER_INTERACTIONS {
+        bigint id PK "Clave primaria auto-incremental"
+        string user_id FK "Referencia a USERS"
+        string track_id FK "Referencia a TRACKS"
+        float rating "5.0 (Like) / 1.0 (Dislike)"
+        string archetype "real_user"
+        string interaction_type "like / dislike"
+        timestamptz created_at
+    }
+
+    RECOMMENDATION_HISTORY {
+        bigint id PK "ID de recomendación"
+        string user_id FK "Usuario receptor"
+        string seed_track_id FK "Canción semilla"
+        string recommended_track_id FK "Canción recomendada"
+        int rank_position "Posición #1 a #10"
+        float alpha_weight "Ponderación híbrida"
+        float hybrid_score "Afinidad final [0, 1]"
+        string source "content / collab / hybrid"
+        timestamptz created_at
+    }
+
+    DJ_CHAT_LOGS {
+        bigint id PK "ID de conversación"
+        string user_id FK "Usuario consultante"
+        text prompt "Texto natural del usuario"
+        string mood_detected "gym / relax / etc."
+        text bot_response "Respuesta generada"
+        timestamptz created_at
+    }
+```
+
+---
+
 ## ✨ Características Principales
 
 ### 1. 🎧 Recomendador Híbrido Multimodal

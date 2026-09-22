@@ -22,7 +22,12 @@ from synthetic_users import generate_interactions, INTERACTIONS_PATH
 from chatbot import analyze_chat_query
 from user_manager import (
     save_user_rating, get_real_interactions,
-    get_combined_interactions, get_real_user_votes
+    get_combined_interactions, get_real_user_votes,
+    normalize_username
+)
+from db import (
+    test_connection as db_test_connection,
+    log_recommendation, log_chat_query
 )
 
 # ─────────────────────────────────────────────
@@ -187,12 +192,20 @@ with st.sidebar:
     st.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=140)
     st.title("BeatMatch AI")
     st.caption("Motor Híbrido de Recomendación Musical")
+
+    # Estado de la base de datos Supabase
+    db_stat = db_test_connection()
+    if db_stat.get("connected"):
+        st.caption(f"🟢 **Supabase Cloud:** Conectado ({db_stat.get('total_interactions', 0):,} filas)")
+    else:
+        st.caption("🟡 **Modo Local:** Sesión en memoria")
+
     st.divider()
 
     st.subheader("👤 Mi Perfil de Oyente Real")
     user_name = st.text_input("Tu nombre o apodo:", value="Samuel", key="real_user_name_input")
     clean_name = user_name.strip() if user_name else "Invitado"
-    real_uid = f"real_{clean_name.lower().replace(' ', '_')}"
+    real_uid = f"real_{normalize_username(clean_name)}"
     
     user_votes = get_real_user_votes(clean_name)
     n_likes = sum(1 for v in user_votes.values() if v >= 4.0)
@@ -513,6 +526,10 @@ with tab_recs:
             }
 
             for idx, r in recs.iterrows():
+                try:
+                    log_recommendation(selected_user_id or "anon", selected_track_id, r.to_dict(), alpha, idx + 1)
+                except Exception:
+                    pass
                 badge_html = source_badges.get(r["source"], source_badges["hybrid"])
                 match_pct = int(r["hybrid_score"] * 100)
                 sp_url = urllib.parse.quote(f"{r['track_name']} {r['artists']}")
@@ -621,6 +638,10 @@ with tab_chat:
                     "content": analysis["message"],
                     "tracks": tracks
                 })
+                try:
+                    log_chat_query(real_uid, active_prompt, analysis.get("mood"), analysis.get("message"))
+                except Exception:
+                    pass
 
 # ═════════════════════════════════════════════
 # TAB 3: ESTADÍSTICAS DEL CATÁLOGO
